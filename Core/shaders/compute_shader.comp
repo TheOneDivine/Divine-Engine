@@ -1,0 +1,362 @@
+#version 450
+
+//precision lowp int;  // -128 to 127
+precision mediump int; // -32768 to 32767
+//precision highp int; // -2147483648 to 2147483647
+
+//precision lowp uint;    // 0 to 255
+//precision mediump uint; // 0 to 65535
+//precision highp uint;   // 0 to 4294967295
+
+//precision lowp float;    // +/- 0.01 to +/- 2
+precision mediump float; // +/- 0.00001 to +/- 16384
+//precision highp float;   // +/- 0.0000001 to +/- 170141183460469231731687303715884105728
+// double precision +/- 0.000000000000001 to +/- 2^1032 approximately = 4.6020944252475287237870212884199 e310
+
+layout(push_constant) uniform pushConstants {
+   double deltaTime;
+   int currentFrame;
+} pushConst;
+
+// uniform buffer object
+layout(std140, binding = 0) uniform uniformBufferObject {
+   ivec2 winExtent;
+   vec3  firstPixel;
+   vec3  pixelDeltaU;
+   vec3  pixelDeltaV;
+   vec3  defocusDiskU;
+   vec3  defocusDiskV;
+   float defocusAngle;
+   vec3  cameraCenter;
+   bool isRendering;
+} ubo;
+
+// render image
+layout(binding = 1, rgba8) uniform image2D Image;
+
+struct Sphere {
+   float radius;
+   vec3 center;
+};
+
+struct Material {
+   float smoothness;
+   float refraction;
+   vec3 color;
+};
+
+layout(std430, binding = 2) buffer SpheresInScene {
+   int count;
+   Sphere sphere[];
+} Spheres;
+
+//Sphere Spheres = { vec3(0.0f,0.0f,0.0f), 5.0f };
+
+layout(std430, binding = 3) buffer MaterialsInScene {
+   int count;
+   Material material[];
+} Materials;
+
+//Material Materials = { vec3(1.0f, 0.0f, 0.0f), 1.0f, -1.0f};
+
+//********** structures **********
+struct hitRecord {
+   bool frontFace;
+   float t;
+   vec3 p;
+   vec3 normal;
+   Material mat;
+};
+
+struct interval {
+   float min;
+   float max;
+};
+struct AABB {
+    vec3 min;
+    vec3 max;
+};
+
+//global constants
+const float infinity = 1.0f / 0.0f;
+const float pi = 3.14159265358979323846264338327950288419716939937510;
+
+int samplesPerPixel = 1;
+int maxBounces = 10;
+
+//********** local variables **********
+vec3 rayOrigin;
+vec3 rayDirection;
+
+ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+vec4 oldColor = imageLoad(Image, pixelCoords);
+vec4 newColor = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+//********** utility **********
+
+// Creates an AABB from two points (extrema)
+AABB createAABB(vec3 pointA, vec3 pointB) {
+    return AABB(
+        min(pointA, pointB), // Take the minimum for each axis
+        max(pointA, pointB)  // Take the maximum for each axis
+    );
+}
+
+float degreesToRadians(float deg) { return deg * pi / 180.0; }
+float reflectance(float cosine, float refractionIndex) {
+   // Use Schlick's approximation for reflectance.
+   float r0 = (1.0f - refractionIndex) / (1.0f + refractionIndex);
+   r0 *= r0;
+   return r0 + (1.0f - r0) * pow((1.0f - cosine), 5.0f);
+}
+vec3 lookingAt(float t) { return rayOrigin + vec3(t) * rayDirection; }
+float lengthSquared(vec3 e) { return e[0] * e[0] + e[1] * e[1] + e[2] * e[2]; }
+float vectorLength(vec3 e) { return sqrt(lengthSquared(e)); }
+vec3 unitVector(inout vec3 v) { return v / length(v); }
+bool nearZero(vec3 e) { return (abs(e[0]) < 0.00001) && (abs(e[1]) < 0.00001) && (abs(e[2]) < 0.00001); }
+
+#define RAND_MAX 0x7FFF
+int next = pixelCoords.x * pixelCoords.y + pushConst.currentFrame * 72345;
+float randomf() {
+   next = next * 214013 + 2531011;
+   return ((next >> 16) & RAND_MAX) / (RAND_MAX + 1.0f);
+}
+float randomf(float min, float max) { return min + (max - min) * randomf(); }
+vec3 randomVec3() { return vec3(randomf(), randomf(), randomf()); }
+vec3 randomVec3(float min, float max) { return vec3(randomf(min, max), randomf(min, max), randomf(min, max)); }
+vec3 randomUnitVector() {
+   while (true) {
+      vec3 p = randomVec3(-1.0f ,1.0f);
+      float lensq = lengthSquared(p);
+      if (1e-7 < lensq && lensq <= 1.0f)
+         return p / sqrt(lensq);
+    }
+}
+vec3 randomOnHemisphere(vec3 normal) {
+   vec3 onUnitSphere = randomUnitVector();
+   if (dot(onUnitSphere, normal) > 0.0f) return onUnitSphere;// In the same hemisphere as the normal
+   else return -onUnitSphere;
+}
+vec3 randomInUnitDisk() {
+   while (true) {
+      vec3 p = vec3(randomf(-1.0f, 1.0f), randomf(-1.0f, 1.0f), 0.0f);
+      if (lengthSquared(p) < 1.0f) return p;
+   }
+}
+vec3 defocusDiskSample() {
+   // Returns a random point in the camera defocus disk.
+   vec3 p = randomInUnitDisk();
+   return ubo.cameraCenter + (p[0] * ubo.defocusDiskU) + (p[1] * ubo.defocusDiskV);
+}
+
+// ********** main ray-tracer functions **********
+
+bool scatter(hitRecord rec, inout vec3 attenuation) {
+   rayOrigin = rec.p;
+   attenuation = rec.mat.color;
+   switch (0) {
+      case 0:// lambertian
+         rayDirection =  rec.normal + randomUnitVector();
+         if (nearZero(rayDirection)) rayDirection = rec.normal;
+         return true;
+
+      case 1:// metal
+         vec3 reflected = reflect(rayDirection, rec.normal);
+         rayDirection = unitVector(reflected) + (rec.mat.smoothness * randomUnitVector());
+         return (dot(rayDirection, rec.normal) > 0);
+
+      case 2:// dielectric
+         attenuation = vec3(1.0f, 1.0f, 1.0f);
+         float ri = rec.frontFace ? (1.0f / rec.mat.refraction) : rec.mat.refraction;
+
+         vec3 unitDirection = unitVector(rayDirection);
+         float cosTheta = min(dot(-unitDirection, rec.normal), 1.0f);
+         float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
+
+         bool cannotRefract = ri * sinTheta > 1.0f;
+         vec3 direction;
+
+         if (cannotRefract || reflectance(cosTheta, ri) > randomf())
+            direction = reflect(unitDirection, rec.normal);
+         else
+            direction = refract(unitDirection, rec.normal, ri);
+
+         rayOrigin = rec.p;
+         rayDirection = direction;
+
+         return true;
+   }
+}
+
+// sorts the face normals
+void setFaceNormal(inout hitRecord rec, vec3 outwardNormal) {
+   // Sets the hit record normal vector.
+   // NOTE: the parameter `outwardNormal` is assumed to have unit length.
+
+   rec.frontFace = dot(rayDirection, outwardNormal) < 0.0f;
+   rec.normal = rec.frontFace ? outwardNormal : -outwardNormal;
+}
+
+// checks for ray intersection with sphere
+bool hit(in int id, float minT, float maxT, inout hitRecord rec) {
+   switch (0) {
+      case 0:
+      {
+      // vector from center of sphere to origin of ray
+      vec3 ocVector = Spheres.sphere[id].center - rayOrigin;
+      float a = (rayDirection.x * rayDirection.x) + (rayDirection.y * rayDirection.y) + (rayDirection.z * rayDirection.z);
+      float b = dot(rayDirection, ocVector);
+      float c = ((ocVector.x * ocVector.x) + (ocVector.y * ocVector.y) + (ocVector.z * ocVector.z)) - (Spheres.sphere[id].radius * Spheres.sphere[id].radius);
+
+      // discriminant value determines sphere interaction(s)
+      // if less than 0 no intersection
+      // if greater than zero than ray hits sphere (ray can intersect 1 to 2 times)
+      float discriminant = b * b - a * c;
+
+      if (discriminant < 0.0f) return false;
+
+      float sqrtDisc = sqrt(discriminant);
+
+      float root = (b - sqrtDisc) / a;
+      if (root <= minT || maxT <= root) {
+         root = (b + sqrtDisc) / a;
+         if (root <= minT || maxT <= root) return false;
+      }
+
+      // update hit record
+      rec.t = root;
+      rec.p = lookingAt(rec.t);
+      vec3 outwardNormal = (rec.p - Spheres.sphere[id].center) / Spheres.sphere[id].radius;
+      setFaceNormal(rec, outwardNormal);
+      rec.mat = Materials.material[id];
+
+      return true;
+
+      }
+
+      /*case 1:
+      {
+      // vector from center of sphere to origin of ray
+      vec3 ocVector = Objects.data1[id] - rayOrigin;
+      float a = (rayDirection.x * rayDirection.x) + (rayDirection.y * rayDirection.y) + (rayDirection.z * rayDirection.z);
+      float b = dot(rayDirection, ocVector);
+      float c = ((ocVector.x * ocVector.x) + (ocVector.y * ocVector.y) + (ocVector.z * ocVector.z)) - (Objects.data2[id].x * Objects.data2[id].x);
+
+      // discriminant value determines sphere interaction(s)
+      // if less than 0 no intersection
+      // if greater than zero than ray hits sphere (ray can intersect 1 to 2 times)
+      float discriminant = b * b - a * c;
+
+      if (discriminant < 0.0f) return false;
+
+      float sqrtDisc = sqrt(discriminant);
+
+      float root = (b - sqrtDisc) / a;
+      if (root <= minT || maxT <= root) {
+         root = (b + sqrtDisc) / a;
+         if (root <= minT || maxT <= root) return false;
+      }
+
+      // update hit record
+      rec.t = root;
+      rec.p = lookingAt(rec.t);
+      vec3 outwardNormal = (rec.p - Objects.data1[id]) / Objects.data2[id].x;
+      setFaceNormal(rec, outwardNormal);
+      rec.mat = Objects.mat[id];
+
+      return true;
+      }*/
+   }
+}
+
+// Checks for ray-AABB intersection
+/*bool hitAABB(AABB box, float minT, float maxT) {
+    for (int i = 0; i < 3; i++) {
+        float invDir = 1.0 / rayDirection[i];
+        float t0 = (box.min[i] - rayOrigin[i]) * invDir;
+        float t1 = (box.max[i] - rayOrigin[i]) * invDir;
+
+        if (t0 > t1) {
+            float temp = t0;
+            t0 = t1;
+            t1 = temp;
+        }
+
+        minT = max(minT, t0); // Update tMin
+        maxT = min(maxT, t1); // Update tMax
+
+        if (maxT <= minT) {
+            return false; // No intersection
+        }
+    }
+    return true; // Intersection found
+}*/
+
+// main hit function
+bool hit(float minT, float maxT, inout hitRecord rec) {
+   hitRecord tempRec;
+   bool hasHit = false;
+   float closestSoFar = maxT;
+
+   for (int i = 0; i < Spheres.count; i++) {
+      if (hit(i, minT, closestSoFar, tempRec)) {
+         hasHit = true;
+         closestSoFar = tempRec.t;
+         rec = tempRec;
+      }
+   }
+
+   return hasHit;
+}
+
+// finds the colors of the ray
+vec3 rayColor() {
+   vec3 oldAttenuation = vec3(1.0f, 1.0f, 1.0f);
+   
+   for (int i = 0; i < maxBounces; i++) {
+      hitRecord rec;
+      vec3 newAttenuation = oldAttenuation;
+      if (hit(0.001f, infinity, rec)) {
+         if (scatter(rec, newAttenuation))
+            oldAttenuation *= newAttenuation;
+            continue;
+      }
+      
+      vec3 unitDirection = unitVector(rayDirection);
+      float a = (unitDirection.y + 1.0f) * 0.5f;
+      return (vec3(1.0f, 1.0f, 1.0f) * (1.0f - a) + vec3(0.5f, 0.7f, 1.0f) * a) * oldAttenuation;
+   }
+}
+
+// size of work group invocation
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+// ran for each pixel
+void main() {
+   for (int i = 0; i < samplesPerPixel; i++) {
+      vec2 offset = vec2(randomf() - 0.5f, randomf() - 0.5f);
+      vec3 pixelSample = ubo.firstPixel + ((pixelCoords.x + offset.x) * ubo.pixelDeltaU) + ((pixelCoords.y + offset.y) * ubo.pixelDeltaV);
+
+      rayOrigin = (ubo.defocusAngle <= 0.0f) ? ubo.cameraCenter : defocusDiskSample();
+      rayDirection = pixelSample - rayOrigin;
+
+      newColor += vec4(rayColor(), 1.0f);
+   }
+   newColor *= 1.0f / samplesPerPixel;
+
+   newColor = vec4(newColor.x > 0.0f ? sqrt(newColor.x) : newColor.x,
+                   newColor.y > 0.0f ? sqrt(newColor.y) : newColor.y,
+                   newColor.z > 0.0f ? sqrt(newColor.z) : newColor.z,
+                   1.0f);
+
+   vec4 accumulatedColor = vec4(0.0f);
+//   if (ubo.isRendering == true) {
+     float weight = 1.0f / (pushConst.currentFrame);
+     accumulatedColor = oldColor * (1.0f - weight) + newColor * weight;
+//   }
+//   else {
+//      accumulatedColor = (oldColor + newColor) * 0.5f;
+//   }
+   
+   imageStore(Image, pixelCoords, accumulatedColor);
+}
