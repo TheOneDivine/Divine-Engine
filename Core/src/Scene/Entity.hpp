@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../preComp.hpp"
+#include "../pch.hpp"
 
 #include "Components.hpp"
 #include "Scene.hpp"

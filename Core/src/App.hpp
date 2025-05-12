@@ -1,6 +1,6 @@
 #pragma once
 
-#include "preComp.hpp"
+#include "pch.hpp"
 
 // External libraries //
 #define GLFW_INCLUDE_VULKAN
@@ -10,6 +10,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/hash.hpp>
+#include <shaderc/shaderc.hpp>
 
 // Standard Library //
 #include <iostream>
@@ -194,7 +195,7 @@ struct SwapChainSupportDetails
 };
 
 // reads a file into a buffer
-static std::vector<char> readFile(const std::string& filename) {
+static inline std::vector<char> readFile(const std::string& filename) {
    std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
    if (!file.is_open())
@@ -209,6 +210,41 @@ static std::vector<char> readFile(const std::string& filename) {
    file.close();
 
    return buffer;
+}
+
+
+static inline std::vector<char> compile(const std::string& filename, shaderc_shader_kind type) {
+   std::string shaderSource = readFile(filename).data();
+
+   // Create Shaderc compiler and options
+   shaderc::Compiler compiler;
+   shaderc::CompileOptions options;
+
+#if defined(DEBUG)
+   options.SetOptimizationLevel(shaderc_optimization_level_zero);
+   options.SetGenerateDebugInfo();
+   options.AddMacroDefinition("DEBUG", "1");
+
+#elif defined(RELEASE)
+   options.SetOptimizationLevel(shaderc_optimization_level_zero);
+   options.SetGenerateDebugInfo();
+   options.AddMacroDefinition("RELEASE", "1");
+
+#else
+   options.SetOptimizationLevel(shaderc_optimization_level_performance);
+
+#endif
+
+   // Compile GLSL to SPIR-V
+   shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(shaderSource, type, filename.c_str(), options);
+
+   // Check compilation result
+   if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
+      const std::string errorMessage = "Shader compilation failed: " + result.GetErrorMessage();
+      std::runtime_error(errorMessage.c_str());
+   }
+
+   return readFile(filename);
 }
 
 // random number generator

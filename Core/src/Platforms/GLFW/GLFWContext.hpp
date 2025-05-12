@@ -28,6 +28,6 @@ namespace GLFW
       VkInstance m_vulkanInstance;
 
       std::list<Ref<GLFWwindow>> m_windows;
-      std::list< Ref<VkSurfaceKHR>> m_surfaces;
+      std::list<Ref<VkSurfaceKHR>> m_surfaces;
    };
 }

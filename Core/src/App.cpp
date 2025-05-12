@@ -510,7 +510,7 @@ VkShaderModule App::createShaderModule(const std::vector<char>& code) {
       .pCode = reinterpret_cast<const uint32_t*>(code.data())
    };
    VkShaderModule shaderModule;
-   if (vkCreateShaderModule(m_logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+   if (vkCreateShaderModule(m_logicalDevice, &createInfo, DEFAULT_ALLOCATOR, &shaderModule) != VK_SUCCESS)
       throw std::runtime_error("failed to create shader module!");
 
    return shaderModule;
@@ -809,7 +809,7 @@ void App::updatePushConstants() {
 }
 
 void App::loadScene() {
-   m_scene = createRef<Scene>();
+   m_scene = CreateRef<Scene>();
 
    switch (0) {
    case 0: // different materials
@@ -1938,12 +1938,8 @@ void App::createPipelineCache(VkPipelineCache& pipelineCache) {
 }
 
 void App::createComputePipeline() {
-   // Run the batch file
-   if (0 != std::system("shaders\\compile_compute.bat"))
-      throw std::runtime_error("failed to compile compute shader!");
-
    // shader stage info structures used for specifying the shader used in the pipeline
-   std::vector<char> compShaderCode = readFile(_DEBUGGING_ENABLED ? "shaders/comp.spv" : "shaders/optimized_comp.spv");
+   std::vector<char> compShaderCode = compile("shaders/compute_shader.comp", shaderc_compute_shader);
    VkShaderModule compShaderModule = createShaderModule(compShaderCode);
    VkPipelineShaderStageCreateInfo compShaderStageInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1996,12 +1992,8 @@ void App::recreateComputePipeline() {
    // Destroy the old pipeline
    vkDestroyPipeline(m_logicalDevice, m_computePipeline, DEFAULT_ALLOCATOR);
 
-   // Run the batch file
-   if (0 != std::system("shaders\\compile_compute.bat"))
-      throw std::runtime_error("failed to compile compute shader!");
-
    // shader stage info structures used for specifying the shader used in the pipeline
-   std::vector<char> compShaderCode = readFile(_DEBUGGING_ENABLED ? "shaders/comp.spv" : "shaders/optimized_comp.spv");
+   std::vector<char> compShaderCode = compile("shaders/compute_shader.comp", shaderc_compute_shader);
    VkShaderModule compShaderModule = createShaderModule(compShaderCode);
    VkPipelineShaderStageCreateInfo compShaderStageInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -2049,19 +2041,11 @@ void App::recreateComputePipeline() {
 }
 
 void App::createGraphicsPipeline() {
-   // Run the batch file
-   if (0 != std::system("shaders\\compile_vertex.bat"))
-      throw std::runtime_error("failed to compile vertex shader!");
-
-   // Run the batch file
-   if (0 != std::system("shaders\\compile_fragment.bat"))
-      throw std::runtime_error("failed to compile fragment shader!");
-
    // shader stages info structures used for specifying the shaders used in the pipeline
    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
 
    // vertex shader
-   std::vector<char> vertShaderCode = readFile(_DEBUGGING_ENABLED ? "shaders/vert.spv" : "shaders/optimized_vert.spv");
+   std::vector<char> vertShaderCode = compile("shaders/vertex_shader.vert", shaderc_vertex_shader);
    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
    shaderStages[0] = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -2073,7 +2057,7 @@ void App::createGraphicsPipeline() {
       .pSpecializationInfo = nullptr
    };
    // fragment shader
-   std::vector<char> fragShaderCode = readFile(_DEBUGGING_ENABLED ? "shaders\\frag.spv" : "shaders/optimized_frag.spv");
+   std::vector<char> fragShaderCode = compile("shaders/fragment_shader.frag", shaderc_fragment_shader);
    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
    shaderStages[1] = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,

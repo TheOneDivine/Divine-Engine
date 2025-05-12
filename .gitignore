@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Core/Core.vcxproj
+/Core/Core.vcxproj.filters
+/Divine_Engine.sln

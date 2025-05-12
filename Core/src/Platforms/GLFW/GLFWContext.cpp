@@ -18,7 +18,7 @@ namespace GLFW
       GLFWwindow* window = glfwCreateWindow(width, height, title, monitor, share);
       //_ASSERT(!window, "Failed to create window!");
 
-      m_windows.push_back(createRef<GLFWwindow>(window));
+      m_windows.push_back(CreateRef<GLFWwindow>(window));
 
       return (uint32_t)m_windows.size();
    }
@@ -52,7 +52,7 @@ namespace GLFW
          //_ASSERT(glfwCreateWindowSurface(m_vulkanInstance, window->get(), DEFAULT_ALLOCATOR, &surface) != VK_SUCCESS,
          //   "Failed to create window surface");
 
-         m_surfaces.push_back(createRef<VkSurfaceKHR>(surface));
+         m_surfaces.push_back(CreateRef<VkSurfaceKHR>(surface));
 
          return (uint32_t)m_surfaces.size();
       }

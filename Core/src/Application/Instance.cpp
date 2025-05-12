@@ -2,7 +2,7 @@
 #include "../Platforms/Vulkan/VulkanInstance.hpp"
 
 void* GAPIInstance::Get() {
-   switch (getAPI())
+   switch (GetAPI())
    {
       case 0:
          VulkanInstance instance;
@@ -13,7 +13,7 @@ void* GAPIInstance::Get() {
 }
 
 void GAPIInstance::Destroy() {
-   switch (getAPI())
+   switch (GetAPI())
    {
    case 0:
       VulkanInstance instance;
