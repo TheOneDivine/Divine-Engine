@@ -500,14 +500,14 @@ void App::copyDescriptorBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
    // free command buffer
    vkFreeCommandBuffers(m_logicalDevice, m_commandBuffersPool, 1, &commandBuffer);
 }
-VkShaderModule App::createShaderModule(const std::vector<char>& code) {
+VkShaderModule App::createShaderModule(const std::vector<uint32_t>& code) {
    // create the shader module
    VkShaderModuleCreateInfo createInfo = {
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
       .pNext = nullptr,
       .flags = 0,
-      .codeSize = code.size(),
-      .pCode = reinterpret_cast<const uint32_t*>(code.data())
+      .codeSize = sizeof(uint32_t) * code.size(),
+      .pCode = (const uint32_t*)code.data()
    };
    VkShaderModule shaderModule;
    if (vkCreateShaderModule(m_logicalDevice, &createInfo, DEFAULT_ALLOCATOR, &shaderModule) != VK_SUCCESS)
@@ -521,7 +521,7 @@ VkShaderModule App::createShaderModule(const std::vector<char>& code) {
 
 void App::createPipelineResourceDescriptorSetsPool() {
    // descriptor pool sizes for uniform buffer and texture sampler
-   std::array<VkDescriptorPoolSize, 6> poolSizes{};
+   std::array<VkDescriptorPoolSize, 5> poolSizes{};
    // graphic
    poolSizes[0] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         (uint32_t)MAX_FRAMES_IN_FLIGHT };
    poolSizes[1] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (uint32_t)MAX_FRAMES_IN_FLIGHT };
@@ -530,7 +530,6 @@ void App::createPipelineResourceDescriptorSetsPool() {
    poolSizes[2] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         (uint32_t)MAX_FRAMES_IN_FLIGHT };
    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          (uint32_t)MAX_FRAMES_IN_FLIGHT };
    poolSizes[4] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         (uint32_t)MAX_FRAMES_IN_FLIGHT };
-   poolSizes[5] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         (uint32_t)MAX_FRAMES_IN_FLIGHT };
 
    // descriptor pool creation info used in creating the descriptor pool object
    VkDescriptorPoolCreateInfo poolInfo = {
@@ -549,7 +548,7 @@ void App::createPipelineResourceDescriptorSetsPool() {
 
 void App::createComputeResourceDescriptorSetLayout() {
    // descriptor set layout bindings for a UBO and two SSBOs
-   std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
+   std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
    // ray tracer viewport UBO
    bindings[0] = {
       .binding = 0,
@@ -569,14 +568,6 @@ void App::createComputeResourceDescriptorSetLayout() {
    // ray spheres SSBO
    bindings[2] = {
       .binding = 2,
-      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-      .descriptorCount = 1,
-      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-      .pImmutableSamplers = nullptr
-   };
-   // ray spheres SSBO
-   bindings[3] = {
-      .binding = 3,
       .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
       .descriptorCount = 1,
       .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -628,21 +619,15 @@ void App::allocateComputeResourceDescriptorSets() {
          .imageView = m_rayStorageImageView,
          .imageLayout = VK_IMAGE_LAYOUT_GENERAL
       };
-      // ray spheres SSBO
+      // ray SSBO
       VkDescriptorBufferInfo raySpheres = {
          .buffer = m_raySpheres[i],
          .offset = 0,
-         .range = sizeof(int) + (sizeof(SphereComponent) * m_scene->size<SphereComponent>())
-      };
-      // ray material SSBO
-      VkDescriptorBufferInfo rayMaterials = {
-         .buffer = m_rayMaterials[i],
-         .offset = 0,
-         .range = sizeof(int) + (sizeof(MaterialComponent) * m_scene->size<MaterialComponent>())
+         .range = sizeof(m_scene)
       };
 
       // descriptor writes for uniform buffer to be submited to the descriptor set object
-      std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
+      std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
       // ray tracer viewport UBO
       descriptorWrites[0] = {
          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -680,19 +665,6 @@ void App::allocateComputeResourceDescriptorSets() {
          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
          .pImageInfo = nullptr,
          .pBufferInfo = &raySpheres,
-         .pTexelBufferView = nullptr
-      };
-      // ray materials SSBO
-      descriptorWrites[3] = {
-         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-         .pNext = nullptr,
-         .dstSet = m_computeDescriptorSets[i],
-         .dstBinding = 3,
-         .dstArrayElement = 0,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-         .pImageInfo = nullptr,
-         .pBufferInfo = &rayMaterials,
          .pTexelBufferView = nullptr
       };
 
@@ -809,14 +781,19 @@ void App::updatePushConstants() {
 }
 
 void App::loadScene() {
-   m_scene = CreateRef<Scene>();
-
    switch (0) {
    case 0: // different materials
    {
-      auto ground = m_scene->createEntity();
-      ground.addComponent<SphereComponent>(glm::vec3{ 0.0f, 0.0f, 0.0f }, 5.0f);
-      ground.addComponent<MaterialComponent>(glm::vec3{ 1.0f, 0.0f, 0.0f });
+      m_scene.sphere[0] = {
+         .radius = 5.0f,
+         .center = { 0.0f, 0.0f, 0.0f },
+         .material = {
+            .smoothness = 5.0f,
+            .refraction = 1.0f,
+            .color = { 1.0f, 0.0f, 0.0f },
+         },
+      };
+      m_scene.count = 1;
       /* auto ground = m_scene->createEntity();
        ground.addComponent<SphereComponent>(glm::vec3{ 0.0f, -100.5f, -1.0f }, 100.0f);
        ground.addComponent<MaterialComponent>(glm::vec3{ 0.8f, 0.8f, 0.0f });*/
@@ -948,75 +925,30 @@ void App::loadScene() {
    }
 }
 void App::createRayTracerSSBOs() {
-   // Sphere SSBO
-   {
-      size_t objectCount = m_scene->size<SphereComponent>();
-      size_t arraySize = sizeof(SphereComponent) * objectCount;
-      VkDeviceSize bufferSize = sizeof(int) + arraySize;
+   VkDeviceSize bufferSize = sizeof(m_scene);
 
-      // Create a staging buffer used to upload data to the gpu
-      VkBuffer stagingBuffer;
-      VkDeviceMemory stagingBufferMemory;
-      createDescriptorBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+   // Create a staging buffer used to upload data to the gpu
+   VkBuffer stagingBuffer;
+   VkDeviceMemory stagingBufferMemory;
+   createDescriptorBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-      void* data{};
-      vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, sizeof(int), 0, &data);
-      memcpy(data, &objectCount, sizeof(int));
-      vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
+   void* data{};
+   vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+   memcpy(data, &m_scene, bufferSize);
+   vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
 
-      auto&& sphereData = m_scene->data<SphereComponent>();
-      vkMapMemory(m_logicalDevice, stagingBufferMemory, sizeof(int), arraySize, 0, &data);
-      memcpy(data, &sphereData, arraySize);
-      vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
+   m_raySpheres.resize(MAX_FRAMES_IN_FLIGHT);
+   m_raySpheresMemory.resize(MAX_FRAMES_IN_FLIGHT);
 
-      m_raySpheres.resize(MAX_FRAMES_IN_FLIGHT);
-      m_raySpheresMemory.resize(MAX_FRAMES_IN_FLIGHT);
-
-      // Copy initial data to all storage buffers
-      for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-         // sphere data
-         createDescriptorBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_raySpheres[i], m_raySpheresMemory[i]);
-         copyDescriptorBuffer(stagingBuffer, m_raySpheres[i], bufferSize, m_computeQueue);
-      }
-
-      vkDestroyBuffer(m_logicalDevice, stagingBuffer, DEFAULT_ALLOCATOR);
-      vkFreeMemory(m_logicalDevice, stagingBufferMemory, DEFAULT_ALLOCATOR);
+   // Copy initial data to all storage buffers
+   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      // sphere data
+      createDescriptorBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_raySpheres[i], m_raySpheresMemory[i]);
+      copyDescriptorBuffer(stagingBuffer, m_raySpheres[i], bufferSize, m_computeQueue);
    }
 
-   // Material SSBO
-   {
-      size_t objectCount = m_scene->size<MaterialComponent>();
-      size_t arraySize = sizeof(MaterialComponent) * objectCount;
-      VkDeviceSize bufferSize = sizeof(int) + arraySize;
-
-      // Create a staging buffer used to upload data to the gpu
-      VkBuffer stagingBuffer;
-      VkDeviceMemory stagingBufferMemory;
-      createDescriptorBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-      void* data{};
-      vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, sizeof(int), 0, &data);
-      memcpy(data, &objectCount, sizeof(int));
-      vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
-
-      auto&& materialData = m_scene->data<MaterialComponent>();
-      vkMapMemory(m_logicalDevice, stagingBufferMemory, sizeof(int), arraySize, 0, &data);
-      memcpy(data, &materialData, arraySize);
-      vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
-
-      m_rayMaterials.resize(MAX_FRAMES_IN_FLIGHT);
-      m_rayMaterialsMemory.resize(MAX_FRAMES_IN_FLIGHT);
-
-      // Copy initial data to all storage buffers
-      for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-         // material data
-         createDescriptorBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_rayMaterials[i], m_rayMaterialsMemory[i]);
-         copyDescriptorBuffer(stagingBuffer, m_rayMaterials[i], bufferSize, m_computeQueue);
-      }
-
-      vkDestroyBuffer(m_logicalDevice, stagingBuffer, DEFAULT_ALLOCATOR);
-      vkFreeMemory(m_logicalDevice, stagingBufferMemory, DEFAULT_ALLOCATOR);
-   }
+   vkDestroyBuffer(m_logicalDevice, stagingBuffer, DEFAULT_ALLOCATOR);
+   vkFreeMemory(m_logicalDevice, stagingBufferMemory, DEFAULT_ALLOCATOR);
 }
 void App::createRayTracerViewUBO() {
    // resize the uniform buffer vector to the number of frames in flight
@@ -1939,7 +1871,7 @@ void App::createPipelineCache(VkPipelineCache& pipelineCache) {
 
 void App::createComputePipeline() {
    // shader stage info structures used for specifying the shader used in the pipeline
-   std::vector<char> compShaderCode = compile("shaders/compute_shader.comp", shaderc_compute_shader);
+   std::vector<uint32_t> compShaderCode = compile("shaders/compute_shader.comp", shaderc_compute_shader);
    VkShaderModule compShaderModule = createShaderModule(compShaderCode);
    VkPipelineShaderStageCreateInfo compShaderStageInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1993,7 +1925,7 @@ void App::recreateComputePipeline() {
    vkDestroyPipeline(m_logicalDevice, m_computePipeline, DEFAULT_ALLOCATOR);
 
    // shader stage info structures used for specifying the shader used in the pipeline
-   std::vector<char> compShaderCode = compile("shaders/compute_shader.comp", shaderc_compute_shader);
+   std::vector<uint32_t> compShaderCode = compile("shaders/compute_shader.comp", shaderc_compute_shader);
    VkShaderModule compShaderModule = createShaderModule(compShaderCode);
    VkPipelineShaderStageCreateInfo compShaderStageInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -2045,7 +1977,7 @@ void App::createGraphicsPipeline() {
    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
 
    // vertex shader
-   std::vector<char> vertShaderCode = compile("shaders/vertex_shader.vert", shaderc_vertex_shader);
+   std::vector<uint32_t> vertShaderCode = compile("shaders/vertex_shader.vert", shaderc_vertex_shader);
    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
    shaderStages[0] = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -2057,7 +1989,7 @@ void App::createGraphicsPipeline() {
       .pSpecializationInfo = nullptr
    };
    // fragment shader
-   std::vector<char> fragShaderCode = compile("shaders/fragment_shader.frag", shaderc_fragment_shader);
+   std::vector<uint32_t> fragShaderCode = compile("shaders/fragment_shader.frag", shaderc_fragment_shader);
    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
    shaderStages[1] = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -2624,8 +2556,6 @@ void App::cleanup() {
    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       vkDestroyBuffer(m_logicalDevice, m_raySpheres[i], DEFAULT_ALLOCATOR);
       vkFreeMemory(m_logicalDevice, m_raySpheresMemory[i], DEFAULT_ALLOCATOR);
-      vkDestroyBuffer(m_logicalDevice, m_rayMaterials[i], DEFAULT_ALLOCATOR);
-      vkFreeMemory(m_logicalDevice, m_rayMaterialsMemory[i], DEFAULT_ALLOCATOR);
    }
 
    // destroy all syncronization objects

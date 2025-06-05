@@ -30,8 +30,8 @@
 
 // TODO: these need to be defined else where
 static const char* TITLE = "Divine Engine"; // app title
-static const uint32_t WIDTH = 800;           // app width (in pixels)
-static const uint32_t HEIGHT = 400;          // app height (in pixels)
+static const uint32_t WIDTH =  960;         // app width (in pixels)
+static const uint32_t HEIGHT = 540;         // app height (in pixels)
 
 // TODO: needs to define the correct Graphics API
 static int GetAPI() { return 0; }

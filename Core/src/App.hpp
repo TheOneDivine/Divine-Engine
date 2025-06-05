@@ -41,7 +41,7 @@ GLSL alignment requirements using alignas():
    vec3, vec4, dvec3, dvec4 = 16
    mat2, mat3, mat4, dmat2, dmat3, dmat4 = 16
    array = number of elements times largest element type alignment (e.g. array of int[12] = 4 * 12 = 48 bytes)
-   custom struct = each member aligns according to its type, and the struct aligns to a multiple of its largest member's alignment (e.g. if largest member is 16 bytes, the struct aligns to 16 bytes).
+   custom struct = each member aligns according to its type, and the struct aligns to a multiple of its largest member's alignment (e.g. if largest member is 16 bytes, the struct aligns to a multiple of 16; 16, 32, 48, etc. ).
 */
 
 // vertex binding descriptions
@@ -145,6 +145,25 @@ typedef enum Ray_Object_Type
    OBJ_MAX_ENUM = 0x7FFF // max integer value currently used by ray shader
 } ObjectType;
 
+struct Material {
+  alignas(4)  float smoothness;
+  alignas(4)  float refraction;
+  alignas(16) glm::vec3 color;
+};
+
+struct Sphere {
+  alignas(4)  float radius;
+  alignas(16) glm::vec3 center;
+  alignas(32) Material material;
+};
+
+#define MAX_SPHERE_COUNT 3 // max number of spheres in the scene
+struct Scene {
+  alignas(4)  int count;
+  alignas(64) Sphere sphere[MAX_SPHERE_COUNT];
+};
+
+
 // graphical shaders UBO
 typedef struct GraphicalUniformBufferObject
 {
@@ -212,9 +231,10 @@ static inline std::vector<char> readFile(const std::string& filename) {
    return buffer;
 }
 
-
-static inline std::vector<char> compile(const std::string& filename, shaderc_shader_kind type) {
-   std::string shaderSource = readFile(filename).data();
+static inline std::vector<uint32_t> compile(const std::string& filename, shaderc_shader_kind type) {
+   // Read the shader source from file
+   std::vector<char> fileData = readFile(filename);
+   std::string shaderSource(fileData.data(), fileData.size());
 
    // Create Shaderc compiler and options
    shaderc::Compiler compiler;
@@ -224,15 +244,12 @@ static inline std::vector<char> compile(const std::string& filename, shaderc_sha
    options.SetOptimizationLevel(shaderc_optimization_level_zero);
    options.SetGenerateDebugInfo();
    options.AddMacroDefinition("DEBUG", "1");
-
 #elif defined(RELEASE)
    options.SetOptimizationLevel(shaderc_optimization_level_zero);
    options.SetGenerateDebugInfo();
    options.AddMacroDefinition("RELEASE", "1");
-
 #else
    options.SetOptimizationLevel(shaderc_optimization_level_performance);
-
 #endif
 
    // Compile GLSL to SPIR-V
@@ -240,11 +257,11 @@ static inline std::vector<char> compile(const std::string& filename, shaderc_sha
 
    // Check compilation result
    if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-      const std::string errorMessage = "Shader compilation failed: " + result.GetErrorMessage();
-      std::runtime_error(errorMessage.c_str());
+      throw std::runtime_error("Shader compilation failed: " + result.GetErrorMessage());
    }
 
-   return readFile(filename);
+   // Return the compiled SPIR-V as vector<uint32_t>
+   return { result.cbegin(), result.cend() };
 }
 
 // random number generator
@@ -257,7 +274,6 @@ static float randomFloat(float min, float max) {
 
 #include "aabb.hpp"
 #include "Buffer/Buffer.hpp"
-#include "Scene/Entity.hpp"
 
 // Main App class (mostly vulkan boilerplate)
 class App
@@ -334,7 +350,7 @@ private:
    // creates a command for copying source buffer data to a destination buffer
    void copyDescriptorBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VkQueue commandQueue);
    // initiates a VkShaderModuleCreateInfo object and wraps shader code in it
-   VkShaderModule createShaderModule(const std::vector<char>& code);
+   VkShaderModule createShaderModule(const std::vector<uint32_t>& code);
 
 
    /********** Pipeline Descriptors **********/
@@ -595,7 +611,7 @@ private:
 
 
    /*** Compute Shader Object Buffers ***/
-   Ref<Scene> m_scene;
+   Scene m_scene;
 
 
    /*** Shader Buffers ***/
@@ -610,9 +626,6 @@ private:
 
    std::vector<VkBuffer> m_raySpheres;
    std::vector<VkDeviceMemory> m_raySpheresMemory;
-
-   std::vector<VkBuffer> m_rayMaterials;
-   std::vector<VkDeviceMemory> m_rayMaterialsMemory;
 
    std::vector<VkBuffer> m_graphicUBOs;
    std::vector<void*> m_graphicMappedUBOs;

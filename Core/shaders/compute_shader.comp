@@ -34,32 +34,24 @@ layout(std140, binding = 0) uniform uniformBufferObject {
 // render image
 layout(binding = 1, rgba8) uniform image2D Image;
 
-struct Sphere {
-   float radius;
-   vec3 center;
-};
-
 struct Material {
    float smoothness;
    float refraction;
    vec3 color;
 };
 
-layout(std430, binding = 2) buffer SpheresInScene {
+struct Sphere {
+   float radius;
+   vec3 center;
+   Material material;
+};
+
+layout(std430, binding = 2) buffer SceneObjs {
    int count;
    Sphere sphere[];
-} Spheres;
+} Scene;
 
-//Sphere Spheres = { vec3(0.0f,0.0f,0.0f), 5.0f };
-
-layout(std430, binding = 3) buffer MaterialsInScene {
-   int count;
-   Material material[];
-} Materials;
-
-//Material Materials = { vec3(1.0f, 0.0f, 0.0f), 1.0f, -1.0f};
-
-//********** structures **********
+//********** structures **********//
 struct hitRecord {
    bool frontFace;
    float t;
@@ -77,14 +69,14 @@ struct AABB {
     vec3 max;
 };
 
-//global constants
+//********** global constants **********//
 const float infinity = 1.0f / 0.0f;
 const float pi = 3.14159265358979323846264338327950288419716939937510;
 
 int samplesPerPixel = 1;
 int maxBounces = 10;
 
-//********** local variables **********
+//********** local variables **********//
 vec3 rayOrigin;
 vec3 rayDirection;
 
@@ -92,7 +84,7 @@ ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
 vec4 oldColor = imageLoad(Image, pixelCoords);
 vec4 newColor = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-//********** utility **********
+//********** utility **********//
 
 // Creates an AABB from two points (extrema)
 AABB createAABB(vec3 pointA, vec3 pointB) {
@@ -149,7 +141,7 @@ vec3 defocusDiskSample() {
    return ubo.cameraCenter + (p[0] * ubo.defocusDiskU) + (p[1] * ubo.defocusDiskV);
 }
 
-// ********** main ray-tracer functions **********
+//********** main ray-tracer functions **********//
 
 bool scatter(hitRecord rec, inout vec3 attenuation) {
    rayOrigin = rec.p;
@@ -202,36 +194,35 @@ bool hit(in int id, float minT, float maxT, inout hitRecord rec) {
    switch (0) {
       case 0:
       {
-      // vector from center of sphere to origin of ray
-      vec3 ocVector = Spheres.sphere[id].center - rayOrigin;
-      float a = (rayDirection.x * rayDirection.x) + (rayDirection.y * rayDirection.y) + (rayDirection.z * rayDirection.z);
-      float b = dot(rayDirection, ocVector);
-      float c = ((ocVector.x * ocVector.x) + (ocVector.y * ocVector.y) + (ocVector.z * ocVector.z)) - (Spheres.sphere[id].radius * Spheres.sphere[id].radius);
+        // vector from center of sphere to origin of ray
+        vec3 ocVector = Scene.sphere[id].center - rayOrigin;
+        float a = (rayDirection.x * rayDirection.x) + (rayDirection.y * rayDirection.y) + (rayDirection.z * rayDirection.z);
+        float b = dot(rayDirection, ocVector);
+        float c = ((ocVector.x * ocVector.x) + (ocVector.y * ocVector.y) + (ocVector.z * ocVector.z)) - (Scene.sphere[id].radius * Scene.sphere[id].radius);
 
-      // discriminant value determines sphere interaction(s)
-      // if less than 0 no intersection
-      // if greater than zero than ray hits sphere (ray can intersect 1 to 2 times)
-      float discriminant = b * b - a * c;
+        // discriminant value determines sphere interaction(s)
+        // if less than 0 no intersection
+        // if greater than zero than ray hits sphere (ray can intersect 1 to 2 times)
+        float discriminant = b * b - a * c;
 
-      if (discriminant < 0.0f) return false;
+        if (discriminant < 0.0f) return false;
 
-      float sqrtDisc = sqrt(discriminant);
+        float sqrtDisc = sqrt(discriminant);
 
-      float root = (b - sqrtDisc) / a;
-      if (root <= minT || maxT <= root) {
-         root = (b + sqrtDisc) / a;
-         if (root <= minT || maxT <= root) return false;
-      }
+        float root = (b - sqrtDisc) / a;
+        if (root <= minT || maxT <= root) {
+           root = (b + sqrtDisc) / a;
+           if (root <= minT || maxT <= root) return false;
+        }
 
-      // update hit record
-      rec.t = root;
-      rec.p = lookingAt(rec.t);
-      vec3 outwardNormal = (rec.p - Spheres.sphere[id].center) / Spheres.sphere[id].radius;
-      setFaceNormal(rec, outwardNormal);
-      rec.mat = Materials.material[id];
+        // update hit record
+        rec.t = root;
+        rec.p = lookingAt(rec.t);
+        vec3 outwardNormal = (rec.p - Scene.sphere[id].center) / Scene.sphere[id].radius;
+        setFaceNormal(rec, outwardNormal);
+        rec.mat = Scene.sphere[id].material;
 
-      return true;
-
+        return true;
       }
 
       /*case 1:
@@ -298,7 +289,7 @@ bool hit(float minT, float maxT, inout hitRecord rec) {
    bool hasHit = false;
    float closestSoFar = maxT;
 
-   for (int i = 0; i < Spheres.count; i++) {
+   for (int i = 0; i < Scene.count; i++) {
       if (hit(i, minT, closestSoFar, tempRec)) {
          hasHit = true;
          closestSoFar = tempRec.t;
@@ -351,11 +342,11 @@ void main() {
 
    vec4 accumulatedColor = vec4(0.0f);
 //   if (ubo.isRendering == true) {
-     float weight = 1.0f / (pushConst.currentFrame);
-     accumulatedColor = oldColor * (1.0f - weight) + newColor * weight;
+     //float weight = 1.0f / (pushConst.currentFrame);
+     //accumulatedColor = oldColor * (1.0f - weight) + newColor * weight;
 //   }
 //   else {
-//      accumulatedColor = (oldColor + newColor) * 0.5f;
+     accumulatedColor = newColor;
 //   }
    
    imageStore(Image, pixelCoords, accumulatedColor);
