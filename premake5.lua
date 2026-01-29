@@ -1,9 +1,23 @@
+-- Checks for specified directory
+function requireDir(path, name)
+    if not os.isdir(path) then
+        error("ERROR: Missing required dependency: " .. name .. " at " .. path)
+    end
+end
+
+-- Load environment variables
+   local VULKAN = os.getenv("VULKAN_SDK")
+   local GLFW   = os.getenv("GLFW_DIR")
+   local GLM    = os.getenv("GLM_DIR")
+   local STB    = os.getenv("STB_DIR")
+   local TINY   = os.getenv("TINYOBJ_DIR")
+
 workspace "Divine_Engine"
 
    configurations {
       -- plain source code, full debug outputs
       "Debug",
-      -- optimized source code, most debug outputs
+      -- optimized source code, some debug outputs
       "Release",
       -- fully optimized, no debugging
       "Distribute"
@@ -36,18 +50,25 @@ project "Core"
       "%{prj.name}/src/**.c",
    }
 
+   -- Validate directories
+   requireDir(VULKAN, "Vulkan SDK")
+   requireDir(GLFW, "GLFW")
+   requireDir(GLM, "GLM")
+   requireDir(STB, "stb")
+   requireDir(TINY, "tinyobjloader")
+
    --absolute paths need to be fixed
    includedirs {
-      "C:/Users/coold/Dev/Library/Vulkan/Include",
-      "C:/Users/coold/Dev/Library/glfw-3.4.WIN64/include",
-      "C:/Users/coold/Dev/Library/glm-master",
-      "C:/Users/coold/Dev/Library/stb-master",
-      "C:/Users/coold/Dev/Library/tinyobjloader-release"
+   VULKAN .. "/Include",
+   GLFW .. "/include",
+   GLM,
+   STB,
+   TINY
    }
 
    libdirs {
-      "C:/Users/coold/Dev/Library/Vulkan/Lib",
-      "C:/Users/coold/Dev/Library/glfw-3.4.WIN64/lib-vc2022"
+      VULKAN .. "/Lib",
+      GLFW   .. "/lib-vc2022"
    }
 
    links {
@@ -71,8 +92,6 @@ project "Core"
       defines { "RELEASE" }
 
    filter { "configurations:Distribute" }
-      optimize "Speed" -- if exacutible has exsesive bloating, switch to Full
+      optimize "Speed" -- if exacutible has excesive bloating, switch to Full
       symbols "Off"
       defines { "DISTRIBUTE" }
-
-   filter {}

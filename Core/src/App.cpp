@@ -111,7 +111,6 @@ void App::keyCallback(GLFWwindow* window, int key, int scancode, int action, int
    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) { moveDir += upDir; }
    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) { moveDir -= upDir; }
 
-
    if (action == GLFW_PRESS) {
       switch (key) {
       case GLFW_KEY_R:
@@ -151,8 +150,8 @@ void App::keyCallback(GLFWwindow* window, int key, int scancode, int action, int
 
    // Normalize and apply the movement
    if (glm::length(moveDir) > std::numeric_limits<float>::epsilon()) {
-      app->m_rayCamera.center += glm::normalize(moveDir) * float(speed * app->m_lastFrameTime);
-      app->m_rayCamera.lookat += glm::normalize(moveDir) * float(speed * app->m_lastFrameTime);
+      app->m_rayCamera.center += glm::normalize(moveDir) * float(speed * app->m_frameDuration);
+      app->m_rayCamera.lookat += glm::normalize(moveDir) * float(speed * app->m_frameDuration);
    }
 }
 void App::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -776,7 +775,7 @@ void App::allocateGraphicsResourceDescriptorSets() {
 /*** Pipeline Descriptors ***/
 
 void App::updatePushConstants() {
-   m_pushConstantData.deltaTime = m_lastFrameTime;
+   m_pushConstantData.deltaTime = m_frameDuration;
    m_pushConstantData.currentFrame = m_currentFrame;
 }
 
@@ -785,12 +784,12 @@ void App::loadScene() {
    case 0: // different materials
    {
       m_scene.sphere[0] = {
-         .radius = 5.0f,
-         .center = { 0.0f, 0.0f, 0.0f },
+         .radius = 2.5f,
+         .center = { -10.0f, 0.0f, 0.0f },
          .material = {
             .smoothness = 5.0f,
             .refraction = 1.0f,
-            .color = { 1.0f, 0.0f, 0.0f },
+            .color = { 0.0f, 0.0f, 0.0f },
          },
       };
       m_scene.count = 1;

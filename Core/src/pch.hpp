@@ -30,6 +30,7 @@
 
 // TODO: these need to be defined else where
 static const char* TITLE = "Divine Engine"; // app title
+static const uint32_t FPS =    30;          // frame per second
 static const uint32_t WIDTH =  960;         // app width (in pixels)
 static const uint32_t HEIGHT = 540;         // app height (in pixels)
 

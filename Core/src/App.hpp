@@ -119,7 +119,7 @@ typedef struct ComputeViewPortUniformBufferObject
 // ray tracer camera
 typedef struct Camera
 {
-   glm::vec3 center = { 13.0f, 2.0f, 3.0f }; // center of camera
+   glm::vec3 center = { -5.0f, 0.0f, 0.0f }; // center of camera
    glm::vec3 lookat = { 0.0f, 0.0f, 0.0f };                         // direction camera is looking
    glm::vec3 vup = { 0.0f, 1.0f, 0.0f };     // Camera-relative "up" direction
    float fov = glm::radians(20.0f);          // cameras field of view
@@ -283,18 +283,25 @@ public:
    // App initialization
    App() {
       initGLFW();
-      m_startTime = std::chrono::high_resolution_clock::now();
+      m_frameStart = std::chrono::high_resolution_clock::now();
       initVulkan();
    }
 
    // Main Game Loop
    void run() {
+      const double targetFrameTime = 1000.0 / FPS;
+
       while (!glfwWindowShouldClose(m_window)) {
+         m_frameStart = std::chrono::high_resolution_clock::now();
+
          glfwPollEvents();
-         std::chrono::steady_clock::time_point currentTime = std::chrono::high_resolution_clock::now();
-         m_lastFrameTime = std::chrono::duration<double, std::chrono::seconds::period>(currentTime - m_startTime).count() * 1000;
-         m_startTime = currentTime;
          drawFrame();
+
+         std::chrono::steady_clock::time_point frameEnd = std::chrono::high_resolution_clock::now();
+         m_frameDuration = std::chrono::duration<double, std::chrono::seconds::period>(frameEnd - m_frameStart).count() * 1000;
+
+         if (m_frameDuration < targetFrameTime)
+            std::this_thread::sleep_for(std::chrono::duration<double>((targetFrameTime - m_frameDuration) / 1000));
       }
       vkDeviceWaitIdle(m_logicalDevice);
    }
@@ -605,8 +612,8 @@ private:
 
    bool m_framebufferResized = false;
    uint32_t m_frameInFlightIndex = 0;
-   double m_lastFrameTime = 0.0f;
-   std::chrono::steady_clock::time_point m_startTime;
+   double m_frameDuration = 0.0f;
+   std::chrono::steady_clock::time_point m_frameStart;
    int m_currentFrame = 1;
 
 

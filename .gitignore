@@ -364,3 +364,7 @@ FodyWeavers.xsd
 /Core/Core.vcxproj
 /Core/Core.vcxproj.filters
 /Divine_Engine.sln
+*.lastbuildstate
+*.tlog
+*.recipe
+*.exe
